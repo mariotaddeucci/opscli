@@ -29,6 +29,7 @@ dependencies = [
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.7,<3",
   "pyresilience>=0.4,<0.5",
+  "pyte>=0.8.1,<1",
   "textual>=2,<4",
   "typer>=0.16,<1",
   "typing-extensions>=4.12,<5",
@@ -116,6 +117,8 @@ max-complexity = 12
 "tests/**/*.py" = ["D", "S101", "ASYNC240", "ANN401"]
 # Executable discovery is intentional; arguments never pass through a shell.
 "src/curupira/clients/process.py" = ["S603", "S607"]
+# PTY children are started with os.execvp after pty.fork; argv never passes through a shell.
+"src/curupira/tui/pty_terminal.py" = ["S606"]
 # SQL identifiers are private constants; all externally supplied values are bound parameters.
 "src/curupira/storage/*.py" = ["S608"]
 

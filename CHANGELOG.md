@@ -98,6 +98,31 @@ All notable changes to this project are documented here. The format follows
   declare `auto_model = "auto"` from their official docs alongside Cursor. Interactive
   Cursor emits `--mode` only for documented `plan`/`ask` (not `agent`); pi prompt
   separators assume pi >= 1.x.
+- Reusable `PtyTerminal` Textual widget (`curupira.tui.pty_terminal`) for an embedded
+  interactive PTY, intended as the building block for a future side-panel coding
+  assistant. It spawns a child with `pty.fork`, emulates the stream with `pyte`
+  (LGPL-3.0, dynamic dependency), forwards keys/paste (DECCKM, xterm modified keys,
+  bracketed paste when the child enables mode 2004), resizes via `content_size` +
+  `TIOCSWINSZ`/`SIGWINCH`, keeps the last screen with an exit status overlay on the
+  last content row (covering that row if the child exited without a trailing newline),
+  clears scrollback on emulator `reset`/`resize`, and cleans up in `on_unmount` (plus
+  an `atexit` safety net). Public API: `PtyTerminal(argv, env, cwd,
+  escape_key="ctrl+g")` with `write()`, `restart()`, and a `Finished` message. Linux
+  and macOS only in v1; Windows mounts an unsupported placeholder. Not wired into the
+  orchestrator layout or configuration yet. Reader feeds pyte in 256-byte slices under
+  a 5 ms budget; render path caches styles, coalesces runs, refreshes dirty strip rows
+  at ~30 fps, and keeps scrollback without `HistoryScreen`. Throughput script:
+  `scripts/measure_pty_throughput.py --runs 3`. Observed ranges (Textual `run_test`
+  `(120, 40)`, 20 s, 1 ms ticker, Linux 6.12.94+, Python 3.11.17) vary by host: on
+  4 CPUs, `yes | head -c 50M` 0.345-0.371 MB/s (p99 16.2-17.2 ms), `seq 2000000`
+  0.522-0.561 MB/s (p99 19.6-21.7 ms), `cat` 40 MiB 0.814-0.850 MB/s (p99 54.4-62.3 ms);
+  on 8 CPUs, yes 0.258-0.277 MB/s (p99 18.6-20.0 ms), seq 0.346-0.374 MB/s (p99
+  26.3-28.3 ms), cat 0.505-0.619 MB/s (p99 76.1-82.6 ms). Across both machines the
+  envelope is yes 0.258-0.371 MB/s (p99 16.2-20.0 ms), seq 0.346-0.561 MB/s (p99
+  19.6-28.3 ms), cat 0.505-0.850 MB/s (p99 54.4-82.6 ms). Loop **max** is a noisy
+  tail (observed up to hundreds of ms) and is not a latency goal; the goal is p99
+  only (`yes`/`seq` < 50 ms, dense `cat` < 100 ms). Outbound writes retry after
+  `EAGAIN` via `add_writer`.
 - Optional `[assistant]` configuration (`AssistantSettings`) for the interactive
   configuration assistant: `agent` (registered coding-agent provider) and `model`.
   Adapters may declare `auto_model` when their CLI documents native automatic model

@@ -58,7 +58,7 @@ on each other.
 | `src/curupira/agents/` | Shared coding-agent contract (`CodingAgentCliAdapter`, including optional `auto_model` and `interactive_launch`), interactive launch specs, registry, `resolve_assistant_model`, and `create_cli_adapter`; compatibility re-exports of built-in coding-agent providers. |
 | `src/curupira/clients/` | GitHub GraphQL/`gh auth token`, `az`/Trello wrappers, and `AsyncProcessRunner` (the only place that starts processes). |
 | `src/curupira/storage/` | SQLite persistence for sessions and cron state. |
-| `src/curupira/cli.py`, `tui/` | Typer commands and the Textual dashboard. |
+| `src/curupira/cli.py`, `tui/` | Typer commands and the Textual dashboard. `tui/pty_terminal.py` is the reusable `PtyTerminal` PTY widget (not wired into the layout yet). |
 | `tests/` | Mirrors `src/` (`tests/providers/<name>/` for each provider); shared fakes in `tests/fakes.py`, builders in `tests/helpers.py`. |
 | `docs/en/` | Canonical documentation; `docs/pt/` and `docs/es/` are translations. One page per provider in `docs/en/providers/`. |
 | `main.py` | MkDocs macros; the provider table and install list come from the agent registry. |

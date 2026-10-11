@@ -149,6 +149,81 @@ The leaf `accent` is the hover color. The dark scheme swaps the neutrals and use
 `primary` for links. The optional product accent (`#014FC9` / `#011E58`) is not
 applied on the docs theme.
 
+## PtyTerminal manual checks
+
+Automated tests cover the `PtyTerminal` widget with fake children (`bash -c`, `cat`,
+and small Python scripts) under Textual's `run_test`. The following still need a real
+machine and are not exercised in CI:
+
+- Drive a real coding-agent CLI inside the widget (Claude Code, Codex, OpenCode, or
+  Cursor) and confirm interactive input, redraw, and resize feel correct.
+- Kill the Curupira host process hard (for example `SIGKILL`) while a PTY child is
+  running and confirm whether an orphan remains; the widget's `atexit` hook cannot run
+  in that case.
+- Spot-check on macOS: `pty.fork`, window-size updates (`TIOCSWINSZ` / `SIGWINCH`), and
+  process-group cleanup.
+
+Windows is unsupported in v1; the widget should render the placeholder instead of
+spawning a child.
+
+`pyte` (LGPL-3.0) is a dynamic runtime dependency of this MIT-licensed project; it is
+not vendored or statically linked. The PTY reader reads up to 1 KiB, feeds pyte in
+256-byte slices under a 5 ms per-tick budget (checked before and after each feed),
+then yields (`remove_reader` / `asyncio.sleep(0)` / re-add). Rendering caches Rich
+styles, coalesces identical adjacent cells into one segment, rebuilds only dirty
+rows into Textual strips, and refreshes those rows at about 30 fps (region refresh
+so the compositor stays on the partial-update path). Scrollback uses a bounded
+deque on `Screen.index` rather than `pyte.HistoryScreen` (whose per-event
+`__getattribute__` wrapper dominated feed time); the deque clears on `reset` and
+`resize`. When the child exits, `Process exited (N)` overlays the last content row
+so it stays inside the visible height; if the child finished without a trailing
+newline on that row, the overlay covers that line's text.
+
+Re-measure with (prints per-run rows plus a min-max summary):
+
+```bash
+uv run --no-sync python scripts/measure_pty_throughput.py --seconds 20 --runs 3
+```
+
+Throughput and loop latency vary by host and load. Figures below are **min-max
+across consecutive runs** of Textual `run_test` size `(120, 40)`, 20 s sample,
+1 ms ticker, on Linux 6.12.94+ with Python 3.11.17 (workloads did not finish in
+that window). Do not treat a single-run point as authoritative. Loop **max** is a
+noisy scheduling/GC tail and is **not** a latency goal; the only hard target when
+changing this path is **p99** (`yes` / `seq` < 50 ms, dense `cat` < 100 ms).
+
+| Machine | Workload | Throughput | p99 (min-max) | max (noisy; not a goal) |
+| --- | --- | --- | --- | --- |
+| 4 CPUs (Intel Xeon, 15 GiB) | `yes \| head -c 50000000` | 0.345-0.371 MB/s | 16.2-17.2 ms | 30.4-173.1 ms |
+| 4 CPUs | `seq 2000000` | 0.522-0.561 MB/s | 19.6-21.7 ms | 33.3-40.7 ms |
+| 4 CPUs | `cat` of a 40 MiB file | 0.814-0.850 MB/s | 54.4-62.3 ms | 108.1-125.5 ms |
+| 8 CPUs (Linux 6.12.94, Python 3.11.17) | `yes \| head -c 50000000` | 0.258-0.277 MB/s | 18.6-20.0 ms | 33.7-328.6 ms |
+| 8 CPUs | `seq 2000000` | 0.346-0.374 MB/s | 26.3-28.3 ms | 47.1-67.3 ms |
+| 8 CPUs | `cat` of a 40 MiB file | 0.505-0.619 MB/s | 76.1-82.6 ms | 164.0-221.5 ms |
+
+Envelope across both machines (do not document a narrower band than this without
+re-measuring both): `yes` 0.258-0.371 MB/s (p99 16.2-20.0 ms), `seq`
+0.346-0.561 MB/s (p99 19.6-28.3 ms), `cat` 0.505-0.850 MB/s (p99 54.4-82.6 ms).
+Automated tests cover the `yes` flood (p99 < 50 ms); a denser `cat`-style flood
+was flaky under CPU load, so it stays as a measurement-script workload only.
+
+Update these ranges when changing the reader or render path (re-run with
+`--runs 3` on each class of machine you care about and widen the table).
+
+### PtyTerminal lifecycle caveats (documented, not changed)
+
+- If the Curupira host is killed with `SIGKILL`, the widget's `atexit` / `on_unmount`
+  cleanup does not run. A child that ignores `SIGHUP`, and any grandchildren, can
+  survive and be reparented (typically to PID 1).
+- Grandchildren that call `setsid` leave the child's process group; force-shutdown
+  only signals the child's process group, so those session leaders survive until a
+  clean host close or an external kill.
+- `_shutdown_child` (unmount / restart / atexit) may block the event loop for up to
+  about 0.1 s (`_KILL_GRACE_SECONDS`) between `SIGHUP` and `SIGKILL` while polling
+  `waitpid`.
+- Outbound PTY writes buffer on `EAGAIN` and retry via `loop.add_writer` (bounded to
+  1 MiB); older builds discarded the remainder of the buffer on `EAGAIN`.
+
 ## Dependency audits
 
 `pip-audit` runs in CI against the synced development environment:
